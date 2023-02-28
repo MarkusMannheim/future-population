@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <!-- Google Analytics -->
+    <script async src="https://www.googletagmanager.com/gtag/js?id=UA-155991615-1"></script>
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){dataLayer.push(arguments);}
+      gtag("js", new Date());
+      gtag("config", "UA-155991615-1");
+    </script>
+
+    <!-- metaphysics -->
+    <meta charset="utf-8">
+    <title>Canberra's demographic centre</title>
+    <meta name="author" content="Markus Mannheim">
+    <meta name="keywords" content="map, data, act, canberra, population, centre, demography, 2021, census">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <!-- for scrapers -->
+    <meta property="og:title" content="Canberra's demographic centre">
+    <meta property="og:description" content="A visualisation of the ACT's past, present and future population centre.">
+    <!-- <meta property="og:image" content="https://markusmannheim.github.io/maps/resources/populationDensity.jpg">
+    <meta property="og:url" content="https://markusmannheim.github.io/maps/population.html"> -->
+    <meta property="og:type" content="website">
+    <meta property="twitter:card" content="summary_large_image">
+    <meta property="twitter:site" content="@MarkusMannheim">
+    <meta property="twitter:creator" content="@MarkusMannheim">
+
+    <!-- scripts -->
+    <script src="./resources/d3.v7.min.js"></script>
+    <script src="./resources/turf.min.js"></script>
+    <link href="./resources/style.css" rel="stylesheet">
+    <link href="./resources/abcLogo64.png" rel="icon">
+    <link href="https://api.mapbox.com/mapbox-gl-js/v2.7.0/mapbox-gl.css" rel="stylesheet">
+    <script src="https://api.mapbox.com/mapbox-gl-js/v2.7.0/mapbox-gl.js"></script>
+  </head>
+
+  <body>
+    <div id="map"></div>
+    <div id="banner"></div>
+
+    <script>
+      // elements
+      banner = d3.select("#banner");
+      pathTime = 500;
+      frames = 20;
+      frameTime = pathTime / frames;
+
+      // load data
+      d3.json("./data/centres.geojson")
+        .then(function(data) {
+
+          // format data
+          centreData = {
+            type: "FeatureCollection",
+            features: data
+              .features.map(function(d) {
+                d.properties.year = +d.properties.year;
+                return d;
+              })
+          };
+          
+          pathData = [centreData.features[0].geometry.coordinates];
+
+          i = 0;
+          while (i < centreData.features.length - 1) {
+            let start = centreData.features[i].geometry.coordinates;
+            let end = centreData.features[i + 1].geometry.coordinates;
+            let gap = [end[0] - start[0], end[1] - start[1]];
+            j = 1;
+            while (j <= frames) {
+              pathData.push([
+                start[0] + gap[0] / frames * j,
+                start[1] + gap[1] / frames * j
+              ]);
+              j = j + 1;
+            }
+            i = i + 1;
+          }
+
+          // await fonts
+          document.fonts.onloadingdone = fontsReady();
+        });
+
+      function fontsReady() {
+        // await user (scroll to map)
+        loadTarget = document.querySelector("#map");
+
+        // set up frame activation
+        observer = new IntersectionObserver(loadFrame, {
+          threshold: .5
+        });
+        ready = false;
+        observer.observe(loadTarget);
+      }
+
+      function loadFrame(interactionObjects) {
+        interactionObjects.map(function(object) {
+          if (!ready && object.isIntersecting) drawMap();
+        });
+      }
+
+      function drawMap() {
+        ready = true;
+        mapboxgl.accessToken = "pk.eyJ1IjoibmV3cy1vbjFpbmUiLCJhIjoiR3FlZFZlVSJ9._30EFE9XYhQitqf4gzRG-g";
+
+        map = new mapboxgl.Map({
+          container: "map",
+          style: "mapbox://styles/mapbox/light-v10",
+          center: centreData.features[0].geometry.coordinates,
+          zoom: 9,
+          attributionControl: false,
+          dragRotate: false,
+          touchZoomRotate: false,
+          scrollZoom: false,
+          dragPan: false
+        });
+
+        attrib = new mapboxgl.AttributionControl({
+          customAttribution: "Australian Bureau of Statistics, ACT Treasury, ABC analysis",
+          compact: true
+        });
+
+        map.addControl(attrib, "bottom-right")
+          .on("load", function() {           
+
+            d3.select("#map").transition()
+              .duration(500)
+              .style("opacity", 1)
+              .on("end", function() {
+                d3.timeout(begin, 1000);
+              });
+
+            map.getStyle()
+              .layers.map(function(d) {
+                return d.id;
+              })
+              .forEach(function(d) {
+                if (
+                  d.includes("admin") ||
+                  d.includes("minor") ||
+                  d.includes("rail") ||
+                  d.includes("point") ||
+                  d.includes("secondary") ||
+                  d.includes("bridge") ||
+                  d.includes("airport") ||
+                  d.includes("tunnel") ||
+                  d.includes("shadow") ||
+                  d.includes("pedestrian") ||
+                  d.includes("aeroway") ||
+                  d.includes("outline") ||
+                  d.includes("state-label")
+                ) map.removeLayer(d);
+              });
+
+            map.addSource("path", {
+              type: "geojson",
+              data: {
+                type: "FeatureCollection",
+                features: []
+              }
+            }).addLayer({
+              id: "centrePath",
+              type: "line",
+              source: "path",
+              layout: {
+                "line-cap": "round",
+                "line-join": "round"
+              },
+              paint: {
+                "line-color": "#009de5",
+                "line-width": 10
+              }
+            });
+
+            centreDiv = document.createElement("div");
+            centreDiv.className = "centre";
+            centreMark = new mapboxgl.Marker(centreDiv).setLngLat(centreData.features[0].geometry.coordinates).addTo(map);
+
+            label = document.createElement("p");
+            label.id = "label";
+            label.innerText = "2001";
+            centreDiv.appendChild(label);
+          });
+      }
+
+      function begin() {        
+        map.setPaintProperty("centrePath", "line-opacity", 0);
+        centreMark = new mapboxgl.Marker(centreDiv).setLngLat(centreData.features[0].geometry.coordinates).addTo(map);
+        label.innerText = "2001";
+
+        map.flyTo({
+          duration: 5000,
+          center: pathData[0],
+          zoom: 14
+        }).once("moveend", animatePath);
+      }
+
+      function animatePath() {
+        map.setPaintProperty("centrePath", "line-opacity", 0.33);
+        label.style.opacity = 1;
+        feature = 1;
+        
+        animation = d3.timer(function(elapsed) {
+          if (Math.floor(elapsed / pathTime) == feature) {
+            label.innerText = centreData.features[feature].properties.year;
+            map.easeTo({
+              center: centreData.features[feature].geometry.coordinates,
+              duration: pathTime,
+              easing(t) {
+                return t;
+              }
+            });
+            feature = feature + 1;
+            if (feature > centreData.features.length - 1) {
+              animation.stop();
+              end();
+            };
+          }
+
+          frame = Math.ceil(elapsed / frameTime);
+
+          movingPathData = {
+            type: "FeatureCollection",
+            features: [{
+              type: "Feature",
+              geometry: {
+                type: "LineString",
+                coordinates: pathData.slice(0, frame)
+              }
+            }]
+          };
+          map.getSource("path").setData(movingPathData);
+          centreMark.setLngLat(pathData[frame - 1]);
+          centreMark.addTo(map);          
+        });
+      }
+
+      function end() {
+        d3.timeout(function() {
+          map.fitBounds(turf.bbox(centreData), {
+            duration: 5000,
+            padding: document.getElementById("map").getBoundingClientRect().width / 8
+          }).once("moveend", function() {
+            d3.timeout(begin, 2000);
+          });
+        }, 1000);
+      }
+
+    </script>
+  </body>
+</html>
